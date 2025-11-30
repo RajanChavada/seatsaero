@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Award Flight Search - Seats Aero Clone</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>✈️ Award Flight Search</h1>
+            <p class="subtitle">Find the best award availability across loyalty programs</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Search Form -->
+        <section class="search-section">
+            <form id="searchForm" class="search-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="origin">From</label>
+                        <input type="text" id="origin" name="origin" placeholder="JFK" 
+                               maxlength="3" required pattern="[A-Za-z]{3}">
+                    </div>
+                    <div class="form-group">
+                        <label for="destination">To</label>
+                        <input type="text" id="destination" name="destination" placeholder="LHR" 
+                               maxlength="3" required pattern="[A-Za-z]{3}">
+                    </div>
+                    <div class="form-group">
+                        <label for="departureDate">Departure Date</label>
+                        <input type="date" id="departureDate" name="departureDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="cabin">Cabin Class</label>
+                        <select id="cabin" name="cabin">
+                            <option value="">All Classes</option>
+                            <option value="economy">Economy</option>
+                            <option value="premium_economy">Premium Economy</option>
+                            <option value="business">Business</option>
+                            <option value="first">First</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <button type="submit" id="searchBtn" class="btn-primary">
+                            🔍 Search Flights
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </section>
+
+        <!-- Filters Section -->
+        <section class="filters-section">
+            <div class="filters-row">
+                <div class="filter-group">
+                    <label for="filterProgram">Program</label>
+                    <select id="filterProgram">
+                        <option value="">All Programs</option>
+                        <option value="united_mileageplus">United MileagePlus</option>
+                        <option value="aeroplan">Air Canada Aeroplan</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="filterMaxPoints">Max Points</label>
+                    <input type="number" id="filterMaxPoints" placeholder="e.g. 100000">
+                </div>
+                <div class="filter-group">
+                    <label for="filterDirectOnly">
+                        <input type="checkbox" id="filterDirectOnly">
+                        Direct Flights Only
+                    </label>
+                </div>
+                <div class="filter-group">
+                    <label for="sortBy">Sort By</label>
+                    <select id="sortBy">
+                        <option value="points">Points (Low to High)</option>
+                        <option value="points-desc">Points (High to Low)</option>
+                        <option value="duration">Duration (Shortest)</option>
+                        <option value="departure_time">Departure Time</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <button type="button" id="applyFilters" class="btn-secondary">
+                        Apply Filters
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Searching award availability...</p>
+        </div>
+
+        <!-- Results Section -->
+        <section id="resultsSection" class="results-section hidden">
+            <div class="results-header">
+                <h2>Search Results</h2>
+                <span id="resultsCount" class="results-count"></span>
+            </div>
+            
+            <div class="table-container">
+                <table id="resultsTable" class="results-table">
+                    <thead>
+                        <tr>
+                            <th>Program</th>
+                            <th>Flight</th>
+                            <th>Route</th>
+                            <th>Date</th>
+                            <th>Departure</th>
+                            <th>Arrival</th>
+                            <th>Duration</th>
+                            <th>Cabin</th>
+                            <th>Points</th>
+                            <th>Taxes</th>
+                            <th>Stops</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody">
+                        <!-- Results populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- No Results Message -->
+        <div id="noResults" class="no-results hidden">
+            <p>😕 No award flights found for this route.</p>
+            <p>Try different dates or check back later.</p>
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorMessage" class="error-message hidden">
+            <p>⚠️ <span id="errorText"></span></p>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>Award Flight Search MVP | Data may be cached</p>
+        </div>
+    </footer>
+
+    <script src="js/api.js"></script>
+    <script src="js/filters.js"></script>
+    <script src="js/table.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
