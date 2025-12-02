@@ -4,10 +4,18 @@
 const API = {
     BASE_URL: 'http://localhost:8000',
     
+    // Default to Google Flights since it works reliably
+    DEFAULT_PROGRAMS: ['google_flights'],
+    
     /**
      * Search for award flights
      */
     async searchFlights(params) {
+        // Add default programs if not specified
+        if (!params.programs) {
+            params.programs = this.DEFAULT_PROGRAMS;
+        }
+        
         const response = await fetch(`${this.BASE_URL}/api/search`, {
             method: 'POST',
             headers: {

@@ -8,10 +8,23 @@ import asyncio
 
 from loguru import logger
 
-from scraper.programs import SCRAPER_REGISTRY, get_scraper
+from scraper.programs import (
+    SCRAPER_REGISTRY, 
+    PROGRAM_DISPLAY_NAMES, 
+    PROGRAM_ROUTES,
+    get_scraper,
+    get_programs_for_route
+)
 
 
 router = APIRouter()
+
+
+class SampleRoute(BaseModel):
+    """Sample route for a program"""
+    origin: str
+    destination: str
+    description: str
 
 
 class ProgramInfo(BaseModel):
@@ -20,6 +33,7 @@ class ProgramInfo(BaseModel):
     display_name: str
     supported_airlines: List[str]
     status: str  # healthy, unhealthy, unknown
+    sample_routes: List[SampleRoute] = []
 
 
 class ProgramsResponse(BaseModel):
@@ -35,25 +49,58 @@ class ProgramHealthResponse(BaseModel):
     message: Optional[str] = None
 
 
+class RouteRecommendation(BaseModel):
+    """Recommended programs for a route"""
+    origin: str
+    destination: str
+    recommended_programs: List[str]
+
+
 @router.get("/programs", response_model=ProgramsResponse)
 async def list_programs():
     """
-    List all available loyalty programs.
+    List all available loyalty programs with sample routes.
     """
     programs = []
     
     for name, scraper_class in SCRAPER_REGISTRY.items():
         scraper = scraper_class()
+        
+        # Get sample routes for this program
+        routes = PROGRAM_ROUTES.get(name, [])
+        sample_routes = [
+            SampleRoute(origin=r[0], destination=r[1], description=r[2])
+            for r in routes
+        ]
+        
         programs.append(ProgramInfo(
             name=scraper.program_name,
-            display_name=scraper.program_display_name,
+            display_name=PROGRAM_DISPLAY_NAMES.get(name, scraper.program_display_name),
             supported_airlines=scraper.supported_airlines,
-            status="unknown"  # Would need health check
+            status="unknown",  # Would need health check
+            sample_routes=sample_routes
         ))
     
     return ProgramsResponse(
         programs=programs,
         count=len(programs)
+    )
+
+
+@router.get("/programs/recommend")
+async def recommend_programs(origin: str, destination: str) -> RouteRecommendation:
+    """
+    Get recommended programs for a specific route.
+    
+    Uses smart route-based selection to suggest the best programs
+    for searching award availability.
+    """
+    recommended = get_programs_for_route(origin, destination)
+    
+    return RouteRecommendation(
+        origin=origin.upper(),
+        destination=destination.upper(),
+        recommended_programs=recommended
     )
 
 
@@ -77,11 +124,19 @@ async def get_program(program_name: str):
         logger.error(f"Health check failed for {program_name}: {e}")
         status = "unhealthy"
     
+    # Get sample routes
+    routes = PROGRAM_ROUTES.get(program_name, [])
+    sample_routes = [
+        SampleRoute(origin=r[0], destination=r[1], description=r[2])
+        for r in routes
+    ]
+    
     return ProgramInfo(
         name=scraper.program_name,
-        display_name=scraper.program_display_name,
+        display_name=PROGRAM_DISPLAY_NAMES.get(program_name, scraper.program_display_name),
         supported_airlines=scraper.supported_airlines,
-        status=status
+        status=status,
+        sample_routes=sample_routes
     )
 
 

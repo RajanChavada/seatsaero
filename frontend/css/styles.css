@@ -284,6 +284,11 @@ main {
     color: var(--primary-color);
 }
 
+.results-table .points .cash-price {
+    color: var(--success-color);
+    font-weight: 700;
+}
+
 .results-table .cabin {
     text-transform: capitalize;
 }

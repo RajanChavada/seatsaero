@@ -27,6 +27,11 @@ const Table = {
     createRow(flight) {
         const tr = document.createElement('tr');
         
+        // Show cash price if available (Google Flights), otherwise show points
+        const priceDisplay = flight.cash_price 
+            ? `<span class="cash-price">$${flight.cash_price.toFixed(0)}</span>`
+            : this.formatPoints(flight.points_required);
+        
         tr.innerHTML = `
             <td class="program">${this.formatProgram(flight.source_program)}</td>
             <td>
@@ -39,7 +44,7 @@ const Table = {
             <td>${flight.arrival_time || '-'}</td>
             <td>${this.formatDuration(flight.duration_minutes)}</td>
             <td class="cabin ${flight.cabin_class}">${this.formatCabin(flight.cabin_class)}</td>
-            <td class="points">${this.formatPoints(flight.points_required)}</td>
+            <td class="points">${priceDisplay}</td>
             <td>${this.formatTaxes(flight.taxes_fees)}</td>
             <td class="stops ${flight.stops === 0 ? 'direct' : ''}">${this.formatStops(flight.stops)}</td>
         `;
@@ -54,6 +59,11 @@ const Table = {
         const names = {
             'united_mileageplus': 'United MileagePlus',
             'aeroplan': 'Aeroplan',
+            'google_flights': 'Google Flights',
+            'jetblue_trueblue': 'JetBlue TrueBlue',
+            'lufthansa_milesmore': 'Lufthansa M&M',
+            'virgin_atlantic': 'Virgin Atlantic',
+            'demo': 'Demo Mode',
         };
         return names[program] || program;
     },

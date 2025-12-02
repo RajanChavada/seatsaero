@@ -1,12 +1,12 @@
 """
-In-Memory Store - Simple storage for MVP
+In-Memory Store - Simple storage for MVP with scrape statistics
 Future: Replace with PostgreSQL/Aurora
 """
 from typing import List, Dict, Optional, Any
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from collections import defaultdict
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from loguru import logger
 
@@ -28,6 +28,267 @@ class SearchFilters:
     programs: Optional[List[str]] = None
     direct_only: bool = False
     max_stops: Optional[int] = None
+
+
+@dataclass
+class ScrapeStats:
+    """Statistics for a single scrape operation"""
+    program: str
+    timestamp: datetime
+    success: bool
+    flights_found: int = 0
+    duration_ms: int = 0
+    error_type: Optional[str] = None  # captcha, rate_limit, blocked, timeout, etc.
+    http_status: Optional[int] = None
+    proxy_id: Optional[str] = None
+    origin: Optional[str] = None
+    destination: Optional[str] = None
+
+
+@dataclass
+class ProgramStats:
+    """Aggregated statistics for a program"""
+    program: str
+    total_scrapes: int = 0
+    successful_scrapes: int = 0
+    failed_scrapes: int = 0
+    total_flights_found: int = 0
+    captcha_count: int = 0
+    rate_limit_count: int = 0
+    blocked_count: int = 0
+    timeout_count: int = 0
+    other_error_count: int = 0
+    avg_duration_ms: float = 0.0
+    last_success: Optional[datetime] = None
+    last_failure: Optional[datetime] = None
+    
+    @property
+    def success_rate(self) -> float:
+        """Calculate success rate as percentage"""
+        if self.total_scrapes == 0:
+            return 0.0
+        return (self.successful_scrapes / self.total_scrapes) * 100
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary"""
+        return {
+            "program": self.program,
+            "total_scrapes": self.total_scrapes,
+            "successful_scrapes": self.successful_scrapes,
+            "failed_scrapes": self.failed_scrapes,
+            "success_rate": round(self.success_rate, 2),
+            "total_flights_found": self.total_flights_found,
+            "captcha_count": self.captcha_count,
+            "rate_limit_count": self.rate_limit_count,
+            "blocked_count": self.blocked_count,
+            "timeout_count": self.timeout_count,
+            "other_error_count": self.other_error_count,
+            "avg_duration_ms": round(self.avg_duration_ms, 2),
+            "last_success": self.last_success.isoformat() if self.last_success else None,
+            "last_failure": self.last_failure.isoformat() if self.last_failure else None,
+        }
+
+
+class ScrapeStatsTracker:
+    """
+    Tracks scrape statistics per program.
+    
+    Features:
+    - Per-program success/failure tracking
+    - CAPTCHA and block detection counts
+    - Proxy performance tracking
+    - Rolling window stats
+    """
+    
+    def __init__(self, window_hours: int = 24):
+        self._stats: List[ScrapeStats] = []
+        self._program_stats: Dict[str, ProgramStats] = {}
+        self._proxy_stats: Dict[str, Dict[str, int]] = defaultdict(lambda: {"success": 0, "failure": 0})
+        self._lock = threading.RLock()
+        self._window_hours = window_hours
+    
+    def record(self, stats: ScrapeStats) -> None:
+        """Record a scrape operation"""
+        with self._lock:
+            self._stats.append(stats)
+            
+            # Update program stats
+            if stats.program not in self._program_stats:
+                self._program_stats[stats.program] = ProgramStats(program=stats.program)
+            
+            prog_stats = self._program_stats[stats.program]
+            prog_stats.total_scrapes += 1
+            
+            if stats.success:
+                prog_stats.successful_scrapes += 1
+                prog_stats.total_flights_found += stats.flights_found
+                prog_stats.last_success = stats.timestamp
+                
+                # Update average duration
+                if prog_stats.successful_scrapes > 0:
+                    total_duration = (prog_stats.avg_duration_ms * (prog_stats.successful_scrapes - 1) 
+                                     + stats.duration_ms)
+                    prog_stats.avg_duration_ms = total_duration / prog_stats.successful_scrapes
+            else:
+                prog_stats.failed_scrapes += 1
+                prog_stats.last_failure = stats.timestamp
+                
+                # Track error types
+                if stats.error_type:
+                    error_type = stats.error_type.lower()
+                    if "captcha" in error_type:
+                        prog_stats.captcha_count += 1
+                    elif "rate_limit" in error_type or "429" in str(stats.http_status or ""):
+                        prog_stats.rate_limit_count += 1
+                    elif "blocked" in error_type or stats.http_status in [403, 428]:
+                        prog_stats.blocked_count += 1
+                    elif "timeout" in error_type:
+                        prog_stats.timeout_count += 1
+                    else:
+                        prog_stats.other_error_count += 1
+            
+            # Track proxy stats
+            if stats.proxy_id:
+                if stats.success:
+                    self._proxy_stats[stats.proxy_id]["success"] += 1
+                else:
+                    self._proxy_stats[stats.proxy_id]["failure"] += 1
+    
+    def record_success(
+        self,
+        program: str,
+        flights_found: int,
+        duration_ms: int = 0,
+        proxy_id: str = None,
+        origin: str = None,
+        destination: str = None
+    ) -> None:
+        """Record a successful scrape"""
+        self.record(ScrapeStats(
+            program=program,
+            timestamp=datetime.utcnow(),
+            success=True,
+            flights_found=flights_found,
+            duration_ms=duration_ms,
+            proxy_id=proxy_id,
+            origin=origin,
+            destination=destination
+        ))
+    
+    def record_failure(
+        self,
+        program: str,
+        error_type: str,
+        http_status: int = None,
+        duration_ms: int = 0,
+        proxy_id: str = None,
+        origin: str = None,
+        destination: str = None
+    ) -> None:
+        """Record a failed scrape"""
+        self.record(ScrapeStats(
+            program=program,
+            timestamp=datetime.utcnow(),
+            success=False,
+            error_type=error_type,
+            http_status=http_status,
+            duration_ms=duration_ms,
+            proxy_id=proxy_id,
+            origin=origin,
+            destination=destination
+        ))
+    
+    def get_program_stats(self, program: str = None) -> Dict[str, Any]:
+        """Get stats for a specific program or all programs"""
+        with self._lock:
+            if program:
+                if program in self._program_stats:
+                    return self._program_stats[program].to_dict()
+                return {}
+            
+            return {
+                name: stats.to_dict() 
+                for name, stats in self._program_stats.items()
+            }
+    
+    def get_recent_stats(self, hours: int = None) -> Dict[str, Any]:
+        """Get stats from the last N hours"""
+        hours = hours or self._window_hours
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        
+        with self._lock:
+            recent = [s for s in self._stats if s.timestamp > cutoff]
+            
+            # Aggregate by program
+            by_program = defaultdict(lambda: {
+                "total": 0, "success": 0, "failure": 0, "flights": 0
+            })
+            
+            for stat in recent:
+                by_program[stat.program]["total"] += 1
+                if stat.success:
+                    by_program[stat.program]["success"] += 1
+                    by_program[stat.program]["flights"] += stat.flights_found
+                else:
+                    by_program[stat.program]["failure"] += 1
+            
+            return {
+                "window_hours": hours,
+                "total_scrapes": len(recent),
+                "by_program": dict(by_program),
+            }
+    
+    def get_proxy_stats(self) -> Dict[str, Dict[str, int]]:
+        """Get proxy performance stats"""
+        with self._lock:
+            return dict(self._proxy_stats)
+    
+    def cleanup_old_stats(self, hours: int = None) -> int:
+        """Remove stats older than N hours"""
+        hours = hours or self._window_hours * 2
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        
+        with self._lock:
+            original_count = len(self._stats)
+            self._stats = [s for s in self._stats if s.timestamp > cutoff]
+            removed = original_count - len(self._stats)
+            
+            if removed:
+                logger.debug(f"Cleaned up {removed} old scrape stats")
+            
+            return removed
+    
+    def get_summary(self) -> Dict[str, Any]:
+        """Get overall summary stats"""
+        with self._lock:
+            total_scrapes = sum(s.total_scrapes for s in self._program_stats.values())
+            total_success = sum(s.successful_scrapes for s in self._program_stats.values())
+            total_flights = sum(s.total_flights_found for s in self._program_stats.values())
+            total_captcha = sum(s.captcha_count for s in self._program_stats.values())
+            total_blocked = sum(s.blocked_count for s in self._program_stats.values())
+            
+            return {
+                "total_scrapes": total_scrapes,
+                "total_success": total_success,
+                "total_flights_found": total_flights,
+                "overall_success_rate": (total_success / total_scrapes * 100) if total_scrapes > 0 else 0,
+                "total_captchas": total_captcha,
+                "total_blocks": total_blocked,
+                "programs_tracked": len(self._program_stats),
+                "proxies_tracked": len(self._proxy_stats),
+            }
+
+
+# Global stats tracker instance
+_stats_tracker: Optional[ScrapeStatsTracker] = None
+
+
+def get_stats_tracker() -> ScrapeStatsTracker:
+    """Get the global stats tracker instance"""
+    global _stats_tracker
+    if _stats_tracker is None:
+        _stats_tracker = ScrapeStatsTracker()
+    return _stats_tracker
 
 
 class InMemoryStore:
@@ -286,6 +547,15 @@ class InMemoryStore:
         """Get all flights"""
         with self._lock:
             return list(self._flights.values())
+    
+    def count(self) -> int:
+        """Get total number of stored flights"""
+        with self._lock:
+            return len(self._flights)
+    
+    def __len__(self) -> int:
+        """Support len() on store"""
+        return self.count()
     
     def clear(self) -> None:
         """Clear all data"""
